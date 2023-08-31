@@ -22,14 +22,17 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
+const helmet_1 = __importDefault(require("helmet"));
 const body_parser_1 = __importDefault(require("body-parser"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
+const http_1 = __importDefault(require("http"));
 const https_1 = __importDefault(require("https"));
 const fs_1 = __importDefault(require("fs"));
 const swagger_jsdoc_1 = __importDefault(require("swagger-jsdoc"));
 const swagger_ui_express_1 = __importDefault(require("swagger-ui-express"));
 const app = (0, express_1.default)();
-const PORT = process.env.PORT || 3000;
+const HTTP_PORT = 3000;
+const HTTPS_PORT = 3443;
 const SECRET_KEY = 'riUd3qNZ9CPB4cR5jm2S1WYoOw78yvJH'; // Replace with your actual secret key
 // Sample data for demonstration
 let items = [];
@@ -57,10 +60,25 @@ const swaggerOptions = {
     swaggerDefinition: {
         openapi: '3.0.0',
         info: {
-            title: 'My API',
+            title: 'My Items API',
             version: '1.0.0',
             description: 'API documentation for My API',
+            contact: {
+                name: 'Example Company',
+                url: 'https://example.com',
+                email: 'nbellias@exmple.com',
+            },
         },
+        servers: [
+            {
+                url: 'http://localhost:3000',
+                description: 'Development server',
+            },
+            {
+                url: 'https://localhost:3443',
+                description: 'Production server',
+            },
+        ],
         components: {
             securitySchemes: {
                 bearerAuth: {
@@ -152,8 +170,8 @@ app.post('/login', (req, res) => {
  *                 type: string
  *                 description: Description of the item.
  *             example:
- *               name: New Item
- *               description: This is a new item.
+ *               name: Item 1
+ *               description: The item with id=1.
  *     responses:
  *       201:
  *         description: Item created successfully.
@@ -162,9 +180,9 @@ app.post('/login', (req, res) => {
  *             example:
  *               message: Item created successfully.
  *               item:
- *                 id: 123
- *                 name: New Item
- *                 description: This is a new item.
+ *                 id: 1
+ *                 name: Item 1
+ *                 description: The item with id=1.
  *       400:
  *         description: Bad request. Invalid input data.
  *       401:
@@ -174,7 +192,8 @@ app.post('/login', (req, res) => {
  */
 app.post('/items', verifyToken, (req, res) => {
     const newItem = req.body;
-    items.push(newItem);
+    const id = items.length + 1;
+    items.push({ ...{ id: id }, ...newItem });
     res.status(201).json(newItem);
 });
 /**
@@ -207,6 +226,38 @@ app.get('/items', verifyToken, (req, res) => {
     const paginatedItems = items.slice(startIndex, endIndex);
     res.status(200).json(paginatedItems);
 });
+/**
+ * @swagger
+ * /items/{id}:
+ *   put:
+ *     summary: Update an item by ID
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         description: ID of the item to update
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       description: Updated item information
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Successfully updated the item
+ *       400:
+ *         description: Bad request, invalid input data
+ *       404:
+ *         description: Item not found
+ */
 app.put('/items/:id', verifyToken, (req, res) => {
     const itemId = parseInt(req.params.id);
     const updatedItem = req.body;
@@ -219,19 +270,46 @@ app.put('/items/:id', verifyToken, (req, res) => {
         res.status(404).json({ message: 'Item not found' });
     }
 });
+/**
+ * @swagger
+ * /items/{id}:
+ *   delete:
+ *     summary: Delete an item by ID
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         description: ID of the item to delete
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       204:
+ *         description: Item deleted successfully
+ *       404:
+ *         description: Item not found
+ *       500:
+ *         description: Server error
+ */
 app.delete('/items/:id', verifyToken, (req, res) => {
     const itemId = parseInt(req.params.id);
     items = items.filter((item) => item.id !== itemId);
     res.status(204).send();
 });
 app.use((0, cors_1.default)());
+app.use((0, helmet_1.default)());
+// Create a HTTP server
+const http_server = http_1.default.createServer(app);
 // Create a HTTPS server
 const options = {
     key: fs_1.default.readFileSync('./sec/private-key.pem'),
     cert: fs_1.default.readFileSync('./sec/certificate.pem')
 };
-const server = https_1.default.createServer(options, app);
-// Start the server
-server.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+const https_server = https_1.default.createServer(options, app);
+// Start the HTTP server
+http_server.listen(HTTP_PORT, () => {
+    console.log(`HTTP Server is running on port ${HTTP_PORT}`);
+});
+// And the HTTPS Server
+https_server.listen(HTTPS_PORT, () => {
+    console.log(`HTTPS Server is running on port ${HTTPS_PORT}`);
 });

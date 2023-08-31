@@ -19,8 +19,10 @@ Then call /items with the token in a header with the key Authorization and the v
 
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
 import bodyParser from 'body-parser';
 import jwt from 'jsonwebtoken';
+import http from 'http';
 import https from 'https';
 import fs from 'fs';
 import swaggerJSDoc from 'swagger-jsdoc';
@@ -28,7 +30,8 @@ import swaggerUi from 'swagger-ui-express';
 
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const HTTP_PORT = 3000;
+const HTTPS_PORT = 3443;
 const SECRET_KEY = 'riUd3qNZ9CPB4cR5jm2S1WYoOw78yvJH'; // Replace with your actual secret key
 
 // Sample data for demonstration
@@ -62,33 +65,48 @@ const swaggerOptions: swaggerJSDoc.Options = {
     swaggerDefinition: {
         openapi: '3.0.0',
         info: {
-          title: 'My API',
-          version: '1.0.0',
-          description: 'API documentation for My API',
-        },
-        components: {
-          securitySchemes: {
-            bearerAuth: {
-              type: 'http',
-              scheme: 'bearer',
-              bearerFormat: 'JWT',
+            title: 'My Items API',
+            version: '1.0.0',
+            description: 'API documentation for My API',
+            contact: {
+                name: 'Example Company',
+                url: 'https://example.com',
+                email: 'nbellias@exmple.com',
             },
-          },
+        },
+        servers: [
+            {
+                url: 'http://localhost:3000',
+                description: 'Development server',
+            },
+            {
+                url: 'https://localhost:3443',
+                description: 'Production server',
+            },
+        ],
+        components: {
+            securitySchemes: {
+                bearerAuth: {
+                    type: 'http',
+                    scheme: 'bearer',
+                    bearerFormat: 'JWT',
+                },
+            },
         },
         security: [
-          {
-            bearerAuth: [],
-          },
+            {
+                bearerAuth: [],
+            },
         ],
         securityDefinitions: {
-          bearerAuth: {
-            type: 'apiKey',
-            name: 'Authorization',
-            in: 'header',
-            description: 'Enter your JWT token in the format "Bearer {token}"',
-          },
+            bearerAuth: {
+                type: 'apiKey',
+                name: 'Authorization',
+                in: 'header',
+                description: 'Enter your JWT token in the format "Bearer {token}"',
+            },
         },
-      },
+    },
     apis: ['./main.ts'], // Point to your app file
 };
 
@@ -165,8 +183,8 @@ app.post('/login', (req, res) => {
  *                 type: string
  *                 description: Description of the item.
  *             example:
- *               name: New Item
- *               description: This is a new item.
+ *               name: Item 1
+ *               description: The item with id=1.
  *     responses:
  *       201:
  *         description: Item created successfully.
@@ -175,9 +193,9 @@ app.post('/login', (req, res) => {
  *             example:
  *               message: Item created successfully.
  *               item:
- *                 id: 123
- *                 name: New Item
- *                 description: This is a new item.
+ *                 id: 1
+ *                 name: Item 1
+ *                 description: The item with id=1.
  *       400:
  *         description: Bad request. Invalid input data.
  *       401:
@@ -187,7 +205,8 @@ app.post('/login', (req, res) => {
  */
 app.post('/items', verifyToken, (req, res) => {
     const newItem = req.body;
-    items.push(newItem);
+    const id = items.length + 1;
+    items.push({ ...{ id: id }, ...newItem });
     res.status(201).json(newItem);
 });
 
@@ -223,6 +242,38 @@ app.get('/items', verifyToken, (req, res) => {
     res.status(200).json(paginatedItems);
 });
 
+/**
+ * @swagger
+ * /items/{id}:
+ *   put:
+ *     summary: Update an item by ID
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         description: ID of the item to update
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       description: Updated item information
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Successfully updated the item
+ *       400:
+ *         description: Bad request, invalid input data
+ *       404:
+ *         description: Item not found
+ */
 app.put('/items/:id', verifyToken, (req, res) => {
     const itemId = parseInt(req.params.id);
     const updatedItem = req.body;
@@ -236,6 +287,26 @@ app.put('/items/:id', verifyToken, (req, res) => {
     }
 });
 
+/**
+ * @swagger
+ * /items/{id}:
+ *   delete:
+ *     summary: Delete an item by ID
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         description: ID of the item to delete
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       204:
+ *         description: Item deleted successfully
+ *       404:
+ *         description: Item not found
+ *       500:
+ *         description: Server error
+ */
 app.delete('/items/:id', verifyToken, (req, res) => {
     const itemId = parseInt(req.params.id);
 
@@ -244,17 +315,23 @@ app.delete('/items/:id', verifyToken, (req, res) => {
 });
 
 app.use(cors());
+app.use(helmet());
+
+// Create a HTTP server
+const http_server = http.createServer(app);
 
 // Create a HTTPS server
 const options = {
     key: fs.readFileSync('./sec/private-key.pem'),
     cert: fs.readFileSync('./sec/certificate.pem')
 };
+const https_server = https.createServer(options, app);
 
-const server = https.createServer(options, app);
-
-// Start the server
-server.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+// Start the HTTP server
+http_server.listen(HTTP_PORT, () => {
+    console.log(`HTTP Server is running on port ${HTTP_PORT}`);
 });
-
+// And the HTTPS Server
+https_server.listen(HTTPS_PORT, () => {
+    console.log(`HTTPS Server is running on port ${HTTPS_PORT}`);
+});
