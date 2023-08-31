@@ -20,6 +20,7 @@ Then call /items with the token in a header with the key Authorization and the v
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import multer from 'multer';
 import bodyParser from 'body-parser';
 import jwt from 'jsonwebtoken';
 import http from 'http';
@@ -59,6 +60,20 @@ const verifyToken = (req: any, res: any, next: any) => {
         next();
     });
 };
+
+// Configure multer for file upload
+const upload = multer({
+    dest: 'uploads/', // Directory to store uploaded files
+    fileFilter: (req, file, cb) => {
+        const allowedTypes = ['.doc', '.docx', '.xls', '.xlsx'];
+        const fileExt = file.originalname.split('.').pop();
+        if (allowedTypes.includes(`.${fileExt}`)) {
+            cb(null, true);
+        } else {
+            cb(new Error('Invalid file type'));
+        }
+    },
+});
 
 // Swagger configuration options
 const swaggerOptions: swaggerJSDoc.Options = {
@@ -314,6 +329,54 @@ app.delete('/items/:id', verifyToken, (req, res) => {
     res.status(204).send();
 });
 
+/**
+ * @swagger
+ * /upload:
+ *   post:
+ *     summary: Upload multiple files of specific types
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               files:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   format: binary
+ *     responses:
+ *       200:
+ *         description: Successfully uploaded files
+ *         content:
+ *           application/json:
+ *             example:
+ *               status: success
+ *               uploadedFiles: [file1.jpg, file2.pdf]
+ *       400:
+ *         description: Bad request, invalid input data or file type
+ *       403:
+ *         description: Forbidden, authentication failed
+ */
+app.post(
+    '/upload',
+    verifyToken,
+    upload.array('files', 5), // Max 5 files
+    (req, res, err) => {
+        if (err instanceof multer.MulterError) {
+            if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+                return res.status(400).json({ error: 'Too many files' });
+            }
+        } else if (err) {
+            return res.status(400).json({ error: err });
+        }
+        const uploadedFiles = (req.files as Array<Express.Multer.File>).map((file: any) => file.originalname);
+        res.json({ status: 'success', uploadedFiles });
+    },
+);
+
 app.use(cors());
 app.use(helmet());
 
@@ -335,3 +398,5 @@ http_server.listen(HTTP_PORT, () => {
 https_server.listen(HTTPS_PORT, () => {
     console.log(`HTTPS Server is running on port ${HTTPS_PORT}`);
 });
+
+
