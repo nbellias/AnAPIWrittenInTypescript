@@ -25,6 +25,7 @@ import bodyParser from 'body-parser';
 import jwt from 'jsonwebtoken';
 import http from 'http';
 import https from 'https';
+import path from 'path';
 import fs from 'fs';
 import swaggerJSDoc from 'swagger-jsdoc';
 import swaggerUi from 'swagger-ui-express';
@@ -62,12 +63,15 @@ const verifyToken = (req: any, res: any, next: any) => {
 };
 
 // Configure multer for file upload
+const storage = multer.memoryStorage(); // Store files in memory for progress tracking
 const upload = multer({
-    dest: 'uploads/', // Directory to store uploaded files
+    // dest: 'uploads/', // Directory to store uploaded files
+    storage,
+    limits: { fileSize: 1024 * 1024 * 5 }, // Limit file size to 5 MB
     fileFilter: (req, file, cb) => {
         const allowedTypes = ['.doc', '.docx', '.xls', '.xlsx'];
-        const fileExt = file.originalname.split('.').pop();
-        if (allowedTypes.includes(`.${fileExt}`)) {
+        const fileExt = path.extname(file.originalname).toLowerCase();
+        if (allowedTypes.includes(fileExt)) {
             cb(null, true);
         } else {
             cb(new Error('Invalid file type'));
@@ -150,8 +154,8 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
  *               password:
  *                 type: string
  *             example:
- *               username: exampleUser
- *               password: yourPassword
+ *               username: user1
+ *               password: password1
  *     responses:
  *       200:
  *         description: Successfully logged in
@@ -364,17 +368,23 @@ app.post(
     '/upload',
     verifyToken,
     upload.array('files', 5), // Max 5 files
-    (req, res, err) => {
-        if (err instanceof multer.MulterError) {
-            if (err.code === 'LIMIT_UNEXPECTED_FILE') {
-                return res.status(400).json({ error: 'Too many files' });
-            }
-        } else if (err) {
-            return res.status(400).json({ error: err });
-        }
-        const uploadedFiles = (req.files as Array<Express.Multer.File>).map((file: any) => file.originalname);
-        res.json({ status: 'success', uploadedFiles });
-    },
+    async (req, res) => {
+        const uploadedFiles = (req.files as Array<Express.Multer.File>).map(async (file: any) => {
+            const fileExt = path.extname(file.originalname).toLowerCase();
+            const filePath = path.join(__dirname, 'uploads', file.originalname);
+
+            // Write the file from memory to the uploads directory
+            await fs.writeFileSync(filePath, file.buffer);
+
+            return {
+                originalname: file.originalname,
+                size: file.size,
+                path: filePath,
+            };
+        });
+        const results = await Promise.all(uploadedFiles);
+        res.json({ status: 'success', uploadedFiles: results });
+    }
 );
 
 app.use(cors());
