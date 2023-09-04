@@ -17,7 +17,8 @@ In Postman first call /login and copy the token
 Then call /items with the token in a header with the key Authorization and the value of the token
 */
 
-import express from 'express';
+import express, { Request, Response } from 'express';
+import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import helmet from 'helmet';
 import multer from 'multer';
@@ -25,15 +26,16 @@ import bodyParser from 'body-parser';
 import jwt from 'jsonwebtoken';
 import http from 'http';
 import https from 'https';
+import rateLimit from 'express-rate-limit';
+import winston from 'winston';
 import path from 'path';
 import fs from 'fs';
 import swaggerJSDoc from 'swagger-jsdoc';
 import swaggerUi from 'swagger-ui-express';
 
-
 const app = express();
-const HTTP_PORT = 3000;
-const HTTPS_PORT = 3443;
+const HTTP_PORT = 43000;
+const HTTPS_PORT = 43443;
 const SECRET_KEY = 'riUd3qNZ9CPB4cR5jm2S1WYoOw78yvJH'; // Replace with your actual secret key
 
 // Sample data for demonstration
@@ -42,8 +44,46 @@ const users = [
     { id: 1, username: 'user1', password: 'password1' },
     { id: 2, username: 'user2', password: 'password2' }
 ];
+const authenticate = (username: string, password: string): boolean => {
+    // In a real-world scenario, you'd verify against a database or another authentication system.
+    const user = users.find((u) => u.username === username && u.password === password);
+    return !!user;
+};
 
+app.use(express.json());
+app.use(cookieParser());
 app.use(bodyParser.json());
+
+// Logger middleware
+// This logs all incoming requests
+const logger = winston.createLogger({
+    level: 'info',
+    format: winston.format.json(),
+    transports: [
+        new winston.transports.File({ filename: 'error.log', level: 'error' }),
+        new winston.transports.File({ filename: 'combined.log' }),
+    ],
+});
+// Logging middleware for requests
+app.use((req, res, next) => {
+    logger.info(`${req.method} ${req.path}`);
+    next();
+});
+
+// Handle errors with a middleware
+app.use((err: any, req: Request, res: Response, next: Function) => {
+    logger.error(err.stack);
+    res.status(500).send({ message: 'Something went wrong!' });
+});
+
+// Rate limiter middleware
+// This helps prevent abuse (like brute-force attacks) 
+// by limiting the number of requests a user/IP can make 
+// in a given timeframe.
+const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000,  // 15 minutes
+    max: 100  // limit each IP to 100 requests per windowMs
+});
 
 // Middleware for JWT token verification
 const verifyToken = (req: any, res: any, next: any) => {
@@ -79,6 +119,10 @@ const upload = multer({
     },
 });
 
+app.use(cors());
+app.use(helmet());
+app.set('trust proxy', 1);  // Trust the first proxy
+
 // Swagger configuration options
 const swaggerOptions: swaggerJSDoc.Options = {
     swaggerDefinition: {
@@ -86,20 +130,25 @@ const swaggerOptions: swaggerJSDoc.Options = {
         info: {
             title: 'My Items API',
             version: '1.0.0',
-            description: 'API documentation for My API',
+            description: 'API documentation for My API [Download the Swagger JSON](https://localhost:43443/swagger.json).',
             contact: {
                 name: 'Example Company',
                 url: 'https://example.com',
-                email: 'nbellias@exmple.com',
+                email: 'nbellias@example.com',
             },
+            license: {
+                name: 'MIT',
+                url: 'https://opensource.org/licenses/MIT',
+            },
+            termsOfService: 'https://example.com/terms-of-service',
         },
         servers: [
             {
-                url: 'http://localhost:3000',
+                url: 'http://localhost:43000',
                 description: 'Development server',
             },
             {
-                url: 'https://localhost:3443',
+                url: 'https://localhost:43443',
                 description: 'Production server',
             },
         ],
@@ -117,22 +166,38 @@ const swaggerOptions: swaggerJSDoc.Options = {
                 bearerAuth: [],
             },
         ],
-        securityDefinitions: {
-            bearerAuth: {
-                type: 'apiKey',
-                name: 'Authorization',
-                in: 'header',
-                description: 'Enter your JWT token in the format "Bearer {token}"',
+        tags: [
+            {
+                name: 'Authentication',
+                description: 'Endpoints for user authentication',
             },
-        },
+            {
+                name: 'Items',
+                description: 'Endpoints for managing items',
+            },
+            {
+                name: 'Upload',
+                description: 'Endpoints for uploading files',
+            },
+        ],
     },
     apis: ['./main.ts'], // Point to your app file
 };
 
 const swaggerSpec = swaggerJSDoc(swaggerOptions);
 
+// Serve swagger.json
+app.get('/swagger.json', (req: Request, res: Response) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.send(swaggerSpec);
+});
+
 // Serve Swagger UI at /api-docs
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+    explorer: true, // Show the explorer at the top right
+    //customCss: '.swagger-ui .topbar { display: none }', // Hide top bar
+    //swaggerUrl: '/swagger.json', // Provide the link to your swagger.json
+}));
 
 // Endpoints are defined here
 
@@ -166,19 +231,35 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
  *       401:
  *         description: Unauthorized - Invalid credentials
  */
-app.post('/login', (req, res) => {
+app.post('/login', (req: Request, res: Response) => {
     const { username, password } = req.body;
+    const protocol = req.protocol;
 
-    const user = users.find((u) => u.username === username && u.password === password);
-    if (!user) {
-        return res.status(401).json({ message: 'Invalid credentials' });
+    if (authenticate(username, password)) {
+        const userInfo = {
+            username,
+            // Include other user information as needed.
+        };
+
+        // Set the cookie with user information
+        res.cookie('userInfo', JSON.stringify(userInfo), {
+            httpOnly: true, // Recommended for security.
+            secure: (protocol === 'https') ? true : false, // If using HTTPS
+            maxAge: 3600000 //1h, Define the cookie expiration time if necessary
+        });
+
+        // Generate a JWT token
+        const token = jwt.sign({ userId: userInfo.username }, SECRET_KEY, { expiresIn: '1h' });
+        res.status(200).json({ token });
+
+        res.status(200).send({ message: 'Login successful' });
+    } else {
+        res.status(401).send({ message: 'Authentication failed' });
     }
 
-    // Generate a JWT token
-    const token = jwt.sign({ userId: user.id }, SECRET_KEY, { expiresIn: '1h' });
-
-    res.status(200).json({ token });
 });
+// Apply rate limiter middleware to login endpoint
+app.use('/login', limiter);
 
 /**
  * @swagger
@@ -386,9 +467,6 @@ app.post(
         res.json({ status: 'success', uploadedFiles: results });
     }
 );
-
-app.use(cors());
-app.use(helmet());
 
 // Create a HTTP server
 const http_server = http.createServer(app);
