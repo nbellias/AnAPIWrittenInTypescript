@@ -128,8 +128,8 @@ const swaggerOptions: swaggerJSDoc.Options = {
     swaggerDefinition: {
         openapi: '3.0.0',
         info: {
-            title: 'My Items API',
-            version: '1.0.0',
+            title: 'Swagger Items - OpenAPI 3.0',
+            version: '1.0.2',
             description: 'API documentation for My API [Download the Swagger JSON](https://localhost:43443/swagger.json).',
             contact: {
                 name: 'Example Company',
@@ -205,6 +205,8 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
  * @swagger
  * /login:
  *   post:
+ *     tags:
+ *       - Authentication
  *     summary: Login and get a JWT token
  *     requestBody:
  *       description: Provide your username and password for authentication
@@ -265,6 +267,8 @@ app.use('/login', limiter);
  * @swagger
  * /items:
  *   post:
+ *     tags:
+ *       - Items
  *     summary: Create a new item
  *     description: Use this endpoint to create a new item by providing item data in the request body.
  *     security:
@@ -314,6 +318,8 @@ app.post('/items', verifyToken, (req, res) => {
  * @swagger
  * /items:
  *   get:
+ *     tags:
+ *       - Items
  *     summary: Get a list of items (with optional pagination)
  *     description: Retrieve a list of items. Requires a valid JWT token for authorization.
  *     security:
@@ -346,6 +352,8 @@ app.get('/items', verifyToken, (req, res) => {
  * @swagger
  * /items/{id}:
  *   put:
+ *     tags:
+ *       - Items
  *     summary: Update an item by ID
  *     parameters:
  *       - name: id
@@ -391,6 +399,8 @@ app.put('/items/:id', verifyToken, (req, res) => {
  * @swagger
  * /items/{id}:
  *   delete:
+ *     tags:
+ *       - Items
  *     summary: Delete an item by ID
  *     parameters:
  *       - name: id
@@ -418,6 +428,8 @@ app.delete('/items/:id', verifyToken, (req, res) => {
  * @swagger
  * /upload:
  *   post:
+ *     tags:
+ *       - Upload
  *     summary: Upload multiple files of specific types
  *     security:
  *       - bearerAuth: []
